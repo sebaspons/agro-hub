@@ -1,0 +1,84 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  font-family: Inter, system-ui, sans-serif;
+  color-scheme: light;
+
+  /* Tokens — claro */
+  --c-bg: 246 247 249;
+  --c-surface: 255 255 255;
+  --c-surface2: 243 244 246;
+  --c-line: 235 238 242;
+  --c-ink: 31 41 55;
+  --c-ink2: 107 114 128;
+}
+
+html.dark {
+  color-scheme: dark; /* controles nativos (date, select, scrollbar) en oscuro */
+
+  /* Tokens — oscuro (las tarjetas se distinguen por relleno, no por marco) */
+  --c-bg: 9 13 24;
+  --c-surface: 25 33 50;
+  --c-surface2: 39 50 71;
+  --c-line: 36 47 67;
+  --c-ink: 226 232 240;
+  --c-ink2: 148 163 184;
+}
+
+html {
+  transition: background-color 0.3s ease;
+}
+
+body {
+  margin: 0;
+  background-color: rgb(var(--c-bg));
+  color: rgb(var(--c-ink));
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Glow sutil de fondo en modo oscuro (acento agro) */
+html.dark body {
+  background-image:
+    radial-gradient(1100px 600px at 100% -5%, rgba(34, 197, 94, 0.07), transparent 55%),
+    radial-gradient(900px 500px at -10% 110%, rgba(59, 130, 246, 0.06), transparent 55%);
+  background-attachment: fixed;
+}
+
+/* Tarjeta: transición suave + brillo sutil arriba en modo oscuro */
+.agro-card {
+  transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+html.dark .agro-card {
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0) 140px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* Scrollbar sutil */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--c-surface2));
+  border-radius: 4px;
+}
+
+/* Recharts en modo oscuro */
+.dark .recharts-cartesian-grid line {
+  stroke: rgba(148, 163, 184, 0.12) !important;
+}
+.dark .recharts-text {
+  fill: rgb(148 163 184) !important;
+}
+.dark .recharts-default-tooltip {
+  background-color: rgb(25 33 50) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  border-radius: 10px;
+  box-shadow: 0 8px 24px -8px rgba(0, 0, 0, 0.6);
+}
+.dark .recharts-tooltip-item,
+.dark .recharts-tooltip-label {
+  color: rgb(226 232 240) !important;
+}
