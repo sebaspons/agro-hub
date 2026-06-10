@@ -77,6 +77,9 @@ def client(Session, clean):
         finally:
             s.close()
 
+    from app.core.ratelimit import login_throttle
+
+    login_throttle.clear()  # estado del throttle no debe filtrarse entre tests
     app.dependency_overrides[get_db] = override
     c = TestClient(app)
     yield c

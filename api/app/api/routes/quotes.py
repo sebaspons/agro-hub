@@ -7,7 +7,16 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_current_user, require_roles
 from app.core.db import get_db
-from app.models import Customer, Product, Quote, QuoteItem, Sale, SaleItem, User
+from app.models import (
+    Customer,
+    Product,
+    Quote,
+    QuoteItem,
+    Sale,
+    SaleItem,
+    Salesperson,
+    User,
+)
 
 router = APIRouter(prefix="/api/quotes", tags=["quotes"])
 
@@ -164,6 +173,106 @@ def create_quote(
     db.commit()
     db.refresh(q)
     return _quote_dict(q, cust.name)
+
+
+@router.get("/{quote_id}")
+def quote_detail(
+    quote_id: int,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> dict:
+    q = db.get(Quote, quote_id)
+    if not q:
+        raise HTTPException(404, "Cotización no encontrada")
+    if user.role.code == "sales" and user.salesperson_id and q.salesperson_id != user.salesperson_id:
+        raise HTTPException(403, "No autorizado")
+    cust = db.get(Customer, q.customer_id)
+    sp = db.get(Salesperson, q.salesperson_id) if q.salesperson_id else None
+    d = _quote_dict(q, cust.name if cust else "")
+    d.update(
+        {
+            "salesperson": sp.name if sp else None,
+            "notes": q.notes or "",
+            "sale_id": q.sale_id,
+            "editable": q.sale_id is None and q.status not in ("won", "lost"),
+            "items": [
+                {
+                    "product_id": it.product_id,
+                    "product": it.product.name,
+                    "quantity": float(it.quantity),
+                    "unit_price": float(it.unit_price),
+                    "discount_pct": round(float(it.discount) * 100, 2),
+                    "subtotal": round(
+                        float(it.unit_price) * float(it.quantity) * (1 - float(it.discount)), 2
+                    ),
+                }
+                for it in q.items
+            ],
+        }
+    )
+    return d
+
+
+class QuoteUpdate(BaseModel):
+    customer_id: int | None = None
+    valid_days: int | None = None
+    notes: str | None = None
+    items: list[QuoteLineIn] | None = None
+
+
+@router.put("/{quote_id}")
+def update_quote(
+    quote_id: int,
+    body: QuoteUpdate,
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles("owner", "finance", "sales")),
+) -> dict:
+    q = db.get(Quote, quote_id)
+    if not q:
+        raise HTTPException(404, "Cotización no encontrada")
+    if user.role.code == "sales" and user.salesperson_id and q.salesperson_id != user.salesperson_id:
+        raise HTTPException(403, "No autorizado")
+    if q.sale_id is not None or q.status in ("won", "lost"):
+        raise HTTPException(409, "No se puede editar una cotización cerrada o ya convertida en venta.")
+
+    if body.customer_id is not None and body.customer_id != q.customer_id:
+        if not db.get(Customer, body.customer_id):
+            raise HTTPException(404, "Cliente no encontrado")
+        q.customer_id = body.customer_id
+    if body.valid_days is not None:
+        q.valid_until = date.today() + timedelta(days=body.valid_days)
+    if body.notes is not None:
+        q.notes = body.notes
+
+    if body.items is not None:
+        if not body.items:
+            raise HTTPException(400, "La cotización debe tener al menos un ítem")
+        for it in list(q.items):
+            db.delete(it)
+        db.flush()
+        total = 0.0
+        for line in body.items:
+            prod = db.get(Product, line.product_id)
+            if not prod:
+                raise HTTPException(404, f"Producto {line.product_id} no encontrado")
+            unit_price = line.unit_price if line.unit_price is not None else float(prod.price)
+            disc = line.discount_pct / 100
+            db.add(
+                QuoteItem(
+                    quote_id=q.id,
+                    product_id=prod.id,
+                    quantity=line.quantity,
+                    unit_price=unit_price,
+                    discount=disc,
+                )
+            )
+            total += unit_price * line.quantity * (1 - disc)
+        q.total = round(total, 2)
+
+    db.commit()
+    db.refresh(q)
+    cust = db.get(Customer, q.customer_id)
+    return _quote_dict(q, cust.name if cust else "")
 
 
 @router.delete("/{quote_id}", status_code=204)

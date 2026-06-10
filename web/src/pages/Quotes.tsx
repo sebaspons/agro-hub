@@ -4,6 +4,7 @@ import { CheckCircle2, Clock, FileText, Plus, Trash2, XCircle } from "lucide-rea
 import { api } from "@/lib/api";
 import { Button, Card, CardBody, Field, Input, Modal, Select, Spinner, Badge, PageTitle } from "@/components/ui";
 import { LineItemsEditor, type Line } from "@/components/LineItemsEditor";
+import { QuoteDetailModal } from "@/components/QuoteDetailModal";
 import { FilterBar } from "@/components/FilterBar";
 import { fmtMoneyShort, fmtDate } from "@/lib/format";
 import { cn } from "@/lib/utils";
@@ -51,6 +52,7 @@ export default function Quotes() {
   const [lines, setLines] = useState<Line[]>([{ product_id: "", quantity: 1, discount_pct: 0 }]);
   const [search, setSearch] = useState("");
   const [f, setF] = useState({ ...QF0 });
+  const [detailId, setDetailId] = useState<number | null>(null);
 
   const { data, isLoading } = useQuery({
     queryKey: ["pipeline"],
@@ -184,9 +186,15 @@ export default function Quotes() {
               <div className="px-4 pb-2 text-xs text-ink2">{fmtMoneyShort(col.value)}</div>
               <CardBody className="space-y-2 px-3 max-h-[60vh] overflow-y-auto">
                 {col.quotes.map((q: any) => (
-                  <div key={q.id} className="group rounded-lg border border-line bg-surface p-3 shadow-sm">
+                  <div key={q.id} className="group rounded-lg border border-line bg-surface p-3 shadow-sm transition hover:border-agro-300 hover:shadow">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-medium text-ink2">{q.code}</span>
+                      <button
+                        onClick={() => setDetailId(q.id)}
+                        className="text-xs font-medium text-ink2 hover:text-agro-600 hover:underline"
+                        title="Ver detalle"
+                      >
+                        {q.code}
+                      </button>
                       <button
                         onClick={() => { if (confirm(`¿Eliminar ${q.code}?`)) del.mutate(q.id); }}
                         className="rounded p-1 text-ink2/70 opacity-0 transition hover:bg-red-50 dark:hover:bg-red-500/15 hover:text-red-500 group-hover:opacity-100"
@@ -194,13 +202,15 @@ export default function Quotes() {
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
-                    <div className="text-sm font-medium text-ink leading-tight">{q.customer}</div>
-                    <div className="mt-1 text-sm font-semibold text-agro-700">{fmtMoneyShort(q.total)}</div>
-                    {q.valid_until && (
-                      <div className={cn("mt-1 text-[11px]", q.expired ? "text-red-500" : "text-ink2")}>
-                        Vence {fmtDate(q.valid_until)} {q.expired && "· vencida"}
-                      </div>
-                    )}
+                    <button onClick={() => setDetailId(q.id)} className="block w-full text-left">
+                      <div className="text-sm font-medium text-ink leading-tight hover:text-agro-700">{q.customer}</div>
+                      <div className="mt-1 text-sm font-semibold text-agro-700">{fmtMoneyShort(q.total)}</div>
+                      {q.valid_until && (
+                        <div className={cn("mt-1 text-[11px]", q.expired ? "text-red-500" : "text-ink2")}>
+                          Vence {fmtDate(q.valid_until)} {q.expired && "· vencida"}
+                        </div>
+                      )}
+                    </button>
                     {NEXT[col.status].length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {NEXT[col.status].map((n) => (
@@ -270,6 +280,8 @@ export default function Quotes() {
           {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         </div>
       </Modal>
+
+      <QuoteDetailModal quoteId={detailId} open={detailId != null} onClose={() => setDetailId(null)} />
     </div>
   );
 }

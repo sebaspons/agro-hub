@@ -8,7 +8,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5433:5432"
+      # Solo accesible desde la propia máquina (no desde la LAN)
+      - "127.0.0.1:5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -32,12 +33,18 @@ services:
       ENVIRONMENT: ${ENVIRONMENT}
       DEFAULT_USER_PASSWORD: ${DEFAULT_USER_PASSWORD}
     ports:
-      - "8080:8000"
+      - "127.0.0.1:8080:8000"
     volumes:
       - ./api:/app
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
 
   web:
     build:
@@ -45,12 +52,13 @@ services:
     container_name: agro_web
     restart: unless-stopped
     depends_on:
-      - api
+      api:
+        condition: service_healthy
     environment:
       VITE_API_URL: ${VITE_API_URL}
       EXPOSE_PUBLIC: ${EXPOSE_PUBLIC:-false}
     ports:
-      - "5174:5173"
+      - "127.0.0.1:5174:5173"
     volumes:
       - ./web:/app
       - /app/node_modules

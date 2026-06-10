@@ -18,6 +18,28 @@ from app.models import Role, User
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
+# bcrypt ignora los bytes después del 72: lo hacemos límite duro explícito
+PASSWORD_MIN, PASSWORD_MAX = 8, 72
+
+
+def _check_password(password: str) -> None:
+    if len(password) < PASSWORD_MIN:
+        raise HTTPException(400, f"La contraseña debe tener al menos {PASSWORD_MIN} caracteres")
+    if len(password.encode()) > PASSWORD_MAX:
+        raise HTTPException(400, f"La contraseña no puede superar {PASSWORD_MAX} caracteres")
+
+
+def _is_last_active_owner(db: Session, u: User) -> bool:
+    """¿`u` es el último usuario activo con rol owner?"""
+    if u.role.code != "owner" or not u.is_active:
+        return False
+    others = db.scalar(
+        select(func.count(User.id))
+        .join(Role, Role.id == User.role_id)
+        .where(Role.code == "owner", User.is_active.is_(True), User.id != u.id)
+    )
+    return not others
+
 
 # ── Usuarios ─────────────────────────────────────────────────────────
 
@@ -65,6 +87,9 @@ def create_user(
     db: Session = Depends(get_db),
     user: User = Depends(require_perm("settings", "create")),
 ) -> dict:
+    _check_password(body.password)
+    if not body.name.strip():
+        raise HTTPException(400, "El nombre no puede estar vacío")
     if db.scalar(select(User).where(User.email == body.email)):
         raise HTTPException(409, "Ya existe un usuario con ese email")
     if not db.get(Role, body.role_id):
@@ -94,14 +119,26 @@ def update_user(
     if not u:
         raise HTTPException(404, "Usuario no encontrado")
     if body.name is not None:
+        if not body.name.strip():
+            raise HTTPException(400, "El nombre no puede estar vacío")
         u.name = body.name
-    if body.email is not None:
+    if body.email is not None and body.email != u.email:
+        if db.scalar(select(User).where(User.email == body.email, User.id != u.id)):
+            raise HTTPException(409, "Ya existe un usuario con ese email")
         u.email = body.email
-    if body.role_id is not None:
-        if not db.get(Role, body.role_id):
+    if body.role_id is not None and body.role_id != u.role_id:
+        role = db.get(Role, body.role_id)
+        if not role:
             raise HTTPException(404, "Rol no encontrado")
+        if role.code != "owner" and _is_last_active_owner(db, u):
+            raise HTTPException(409, "No se puede quitar el rol al último owner activo")
         u.role_id = body.role_id
-    if body.is_active is not None:
+    if body.is_active is not None and body.is_active != u.is_active:
+        if not body.is_active:
+            if u.id == user.id:
+                raise HTTPException(409, "No podés desactivar tu propio usuario")
+            if _is_last_active_owner(db, u):
+                raise HTTPException(409, "No se puede desactivar al último owner activo")
         u.is_active = body.is_active
     if body.salesperson_id is not None:
         u.salesperson_id = body.salesperson_id
@@ -124,8 +161,7 @@ def reset_password(
     u = db.get(User, user_id)
     if not u:
         raise HTTPException(404, "Usuario no encontrado")
-    if len(body.password) < 4:
-        raise HTTPException(400, "La contraseña es demasiado corta")
+    _check_password(body.password)
     u.hashed_password = hash_password(body.password)
     db.commit()
     return {"ok": True}
